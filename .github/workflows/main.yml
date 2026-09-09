@@ -1,4 +1,3 @@
-
 name: Better Tomorrow Android Release AAB
 
 on:
@@ -12,14 +11,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find and extract latest project ZIP
+      - name: Extract Play Store ready project
         shell: bash
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -type f -name 'BetterTomorrow_International_Live_V4_FIXED.zip' -print -quit)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "BetterTomorrow_International_Live_V3.zip not found"
+          ZIP_FILE="BetterTomorrow_PLAYSTORE_READY_V5.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: $ZIP_FILE not found"
             exit 1
           fi
+
           rm -rf .build_source
           mkdir -p .build_source
           unzip -o "$ZIP_FILE" -d .build_source
@@ -48,3 +49,4 @@ jobs:
           name: BetterTomorrow-release-aab
           path: app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+
