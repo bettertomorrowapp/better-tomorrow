@@ -11,18 +11,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Play Store ready project
+      - name: Find and extract Better Tomorrow project
         shell: bash
         run: |
-          ZIP_FILE="BetterTomorrow_PLAYSTORE_READY_V5.zip"
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname 'BetterTomorrow*.zip' -print -quit)
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "ERROR: $ZIP_FILE not found"
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Better Tomorrow project ZIP not found"
             exit 1
           fi
 
+          echo "Using project ZIP: $ZIP_FILE"
+
           rm -rf .build_source
           mkdir -p .build_source
+
           unzip -o "$ZIP_FILE" -d .build_source
           cp -a .build_source/. .
 
@@ -33,7 +36,9 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
@@ -41,12 +46,26 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build release AAB
-        run: gradle --no-daemon clean bundleRelease
+        shell: bash
+        run: |
+          gradle --no-daemon clean bundleRelease
+
+      - name: Verify AAB
+        shell: bash
+        run: |
+          AAB=$(find app/build/outputs/bundle/release -type f -name "*.aab" -print -quit)
+
+          if [ -z "$AAB" ]; then
+            echo "ERROR: No AAB file was generated"
+            exit 1
+          fi
+
+          echo "AAB successfully generated:"
+          ls -lh "$AAB"
 
       - name: Upload release AAB
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: BetterTomorrow-release-aab
           path: app/build/outputs/bundle/release/*.aab
+          archive: false
           if-no-files-found: error
-
