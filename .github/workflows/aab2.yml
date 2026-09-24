@@ -1,0 +1,181 @@
+name: Better Tomorrow AAB 2
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find and extract Android project
+        shell: bash
+        run: |
+          set -e
+
+          ZIP_FILE=$(find . -maxdepth 1 -type f \
+            \( -name 'BetterTomorrow_International*.zip' -o -name '*.zip' \) \
+            -print -quit)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Android project ZIP not found"
+            exit 1
+          fi
+
+          echo "Using project: $ZIP_FILE"
+
+          rm -rf .build_source
+          mkdir -p .build_source
+
+          unzip -o "$ZIP_FILE" -d .build_source
+          cp -a .build_source/. .
+
+      - name: Set Version Code to 2
+        shell: bash
+        run: |
+          set -e
+
+          if [ ! -f app/build.gradle ]; then
+            echo "app/build.gradle not found"
+            exit 1
+          fi
+
+          sed -i -E 's/versionCode[[:space:]]+[0-9]+/versionCode 2/' app/build.gradle
+
+          echo "Final versionCode:"
+          grep -n "versionCode" app/build.gradle
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build release AAB
+        shell: bash
+        run: |
+          set -e
+          gradle --no-daemon clean bundleRelease
+
+      - name: Find release AAB
+        shell: bash
+        run: |
+          set -e
+
+          AAB_FILE=$(find app/build/outputs/bundle/release \
+            -maxdepth 1 -type f -name '*.aab' -print -quit)
+
+          if [ -z "$AAB_FILE" ]; then
+            echo "Release AAB not found"
+            exit 1
+          fi
+
+          echo "AAB_FILE=$AAB_FILE" >> "$GITHUB_ENV"
+          echo "Found: $AAB_FILE"
+
+      - name: Decode upload keystore
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_JSON: ${{ secrets.ANDROID_KEYSTORE_JSON }}
+        run: |
+          set -e
+
+          if [ -z "$ANDROID_KEYSTORE_JSON" ]; then
+            echo "ANDROID_KEYSTORE_JSON secret is missing"
+            exit 1
+          fi
+
+          printf '%s' "$ANDROID_KEYSTORE_JSON" > signing.json
+
+          keystore_base64=$(jq -r '.keystore_base64' signing.json)
+          store_password=$(jq -r '.store_password' signing.json)
+          key_alias=$(jq -r '.key_alias' signing.json)
+          key_password=$(jq -r '.key_password' signing.json)
+
+          if [ -z "$keystore_base64" ] || [ "$keystore_base64" = "null" ]; then
+            echo "Keystore data is missing"
+            exit 1
+          fi
+
+          if [ -z "$store_password" ] || [ "$store_password" = "null" ]; then
+            echo "Keystore password is missing"
+            exit 1
+          fi
+
+          if [ -z "$key_alias" ] || [ "$key_alias" = "null" ]; then
+            echo "Key alias is missing"
+            exit 1
+          fi
+
+          if [ -z "$key_password" ] || [ "$key_password" = "null" ]; then
+            echo "Key password is missing"
+            exit 1
+          fi
+
+          printf '%s' "$keystore_base64" | base64 --decode > android-upload-key.jks
+
+          {
+            echo "STORE_PASSWORD=$store_password"
+            echo "KEY_ALIAS=$key_alias"
+            echo "KEY_PASSWORD=$key_password"
+          } > signing.env
+
+      - name: Sign release AAB
+        shell: bash
+        run: |
+          set -e
+          source signing.env
+
+          jarsigner \
+            -keystore android-upload-key.jks \
+            -storepass "$STORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            "$AAB_FILE" \
+            "$KEY_ALIAS"
+
+      - name: Verify signed AAB
+        shell: bash
+        run: |
+          set -e
+
+          jarsigner \
+            -verify \
+            -verbose \
+            -certs \
+            -keystore android-upload-key.jks \
+            "$AAB_FILE"
+
+          echo "SIGNED AAB VERIFIED"
+
+          echo "VERSION CODE:"
+          grep -n "versionCode" app/build.gradle
+
+      - name: Rename final AAB
+        shell: bash
+        run: |
+          set -e
+          cp "$AAB_FILE" BetterTomorrow-release-v2-signed.aab
+          ls -lh BetterTomorrow-release-v2-signed.aab
+
+      - name: Upload Play Store AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterTomorrow-AAB-Version-2-SIGNED
+          path: BetterTomorrow-release-v2-signed.aab
+          if-no-files-found: error
