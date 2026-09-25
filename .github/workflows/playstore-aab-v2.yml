@@ -249,7 +249,7 @@ jobs:
           cat "$APP_GRADLE"
           echo "=================================="
 
-      - name: Verify keystore password
+            - name: Verify keystore password
         shell: bash
         env:
           UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
@@ -264,8 +264,7 @@ jobs:
           keytool -list \
             -keystore "$PROJECT_DIR/upload-key.jks" \
             -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
-            -alias "better-tomorrow-upload" \
-            > /dev/null
+            -alias "better-tomorrow-upload"
 
           echo "SUCCESS: Existing upload signing key verified."
 
