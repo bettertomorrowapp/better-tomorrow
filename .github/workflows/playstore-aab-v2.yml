@@ -249,24 +249,7 @@ jobs:
           cat "$APP_GRADLE"
           echo "=================================="
 
-            - name: Verify keystore password
-        shell: bash
-        env:
-          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
-        run: |
-          set -e
-
-          if [ -z "$UPLOAD_KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: UPLOAD_KEYSTORE_PASSWORD secret is empty or unavailable."
-            exit 1
-          fi
-
-          keytool -list \
-            -keystore "$PROJECT_DIR/upload-key.jks" \
-            -storepass "$UPLOAD_KEYSTORE_PASSWORD" \
-            -alias "better-tomorrow-upload"
-
-          echo "SUCCESS: Existing upload signing key verified."
+      
 
       - name: Build signed AAB
         shell: bash
