@@ -1,0 +1,79 @@
+name: Better Tomorrow - Build Version 2 AAB
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"             "platform-tools"             "platforms;android-36"             "build-tools;35.0.0"
+
+      - name: Extract verified source project
+        shell: bash
+        run: |
+          rm -rf project
+          mkdir project
+          unzip -q BetterTomorrow_SOURCE_V2.zip -d project
+          test -f project/app/build.gradle
+          test -f project/build.gradle
+          test -f project/settings.gradle
+
+      - name: Restore Play upload keystore
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.BT_UPLOAD_KEYSTORE_B64 }}
+        run: |
+          mkdir -p project/.signing
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > project/.signing/bettertomorrow-upload-key.jks
+          test -s project/.signing/bettertomorrow-upload-key.jks
+
+      - name: Build signed Version 2 AAB
+        working-directory: project
+        shell: bash
+        env:
+          BT_UPLOAD_KEYSTORE_FILE: ${{ github.workspace }}/project/.signing/bettertomorrow-upload-key.jks
+          BT_UPLOAD_KEY_ALIAS: ${{ secrets.BT_UPLOAD_KEY_ALIAS }}
+          BT_UPLOAD_KEY_PASSWORD: ${{ secrets.BT_UPLOAD_KEY_PASSWORD }}
+          BT_UPLOAD_STORE_PASSWORD: ${{ secrets.BT_UPLOAD_STORE_PASSWORD }}
+        run: |
+          gradle :app:bundleRelease --stacktrace
+
+      - name: Verify AAB
+        working-directory: project
+        shell: bash
+        run: |
+          test -f app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.aab > signature-check.txt
+          grep -E "jar verified|Better Tomorrow Upload|X.509" signature-check.txt || true
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterTomorrow-release-v2-AAB
+          path: project/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      - name: Upload signature report
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterTomorrow-signature-report
+          path: project/signature-check.txt
+          if-no-files-found: error
